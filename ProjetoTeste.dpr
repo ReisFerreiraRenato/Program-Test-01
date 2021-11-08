@@ -1,0 +1,18 @@
+program ProjetoTeste;
+
+uses
+  Vcl.Forms,
+  untPrincipal in 'untPrincipal.pas' {frmPrincipal},
+  untDataModulo in 'untDataModulo.pas' {DataModule2: TDataModule},
+  untFuncoes in 'untFuncoes.pas',
+  untClasses in 'untClasses.pas';
+
+{$R *.res}
+
+begin
+  Application.Initialize;
+  Application.MainFormOnTaskbar := True;
+  Application.CreateForm(TfrmPrincipal, frmPrincipal);
+  Application.CreateForm(TDataModule2, DataModule2);
+  Application.Run;
+end.

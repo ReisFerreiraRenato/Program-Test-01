@@ -1,0 +1,403 @@
+unit untFuncoes;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils,
+  System.Variants, System.Classes,Data.Win.ADODB, untClasses,
+  Vcl.Dialogs, System.JSON, Data.Bind.Components, Data.Bind.ObjectScope, REST.Types, REST.Client;
+
+function BuscarNomeEstruturada(prmTexto: String): Boolean;
+
+function BuscarNomePOO(prmTexto: String): TListaCliente;
+
+function BuscarClienteNaAPI(prmNome: String): TListaCliente;
+
+function BuscarCep(prmCEP: String): TJSONValue;
+
+function CarregarJsonPOO(prmJsonCLiente: String): TListaCliente;
+
+function ExcluirContato(prmID, prmIDCliente:Integer):Boolean;
+
+function ExcluirCliente(prmID: Integer): Boolean;
+
+function ExecutarQuery(prmScript: String): Boolean;
+
+function GravarCliente(prmNome,
+  prmCep,
+  prmLogradouro,
+  prmNumero,
+  prmComplemento,
+  prmCidade,
+  prmSigla_UF,
+  prmIBGE_Cidade,
+  prmIBGE_UF: String;
+  prmID: Integer): Boolean;
+
+function GravarContato(prmIDCliente: Integer; prmNomeContato, prmDataNascimento, prmTelefone: String): Boolean;
+
+function MontarQuery(var prmQuery: TADOQuery; LocScript: String): Boolean;
+
+function FecharQryCliente(): Boolean;
+
+function FecharQryContato(): Boolean;
+
+function IDExiste(prmID: Integer; prmTabela: String): Boolean;
+
+function ValidarCep(const CEP: String): Boolean;
+
+procedure CarregarContatos(prmIDCliente: String);
+
+procedure NovoCliente(var prmCliente: TCliente);
+
+procedure NovoContato(prmIDCLiente: Integer; var prmContato: TContato);
+
+implementation
+
+uses untDataModulo;
+
+//Função para buscar o cliente
+function BuscarNomeEstruturada(prmTexto: String): Boolean;
+begin
+  try
+    with DataModule2 do
+    begin
+      qryClientes.Close;
+      qryClientes.SQL.Clear;
+      qryClientes.SQL.Add('SELECT * FROM Cliente WHERE Nome LIKE '+QuotedStr('%'+prmTexto+'%'));
+      qryClientes.Open;
+      qryContato.Close;
+      qryContato.Parameters.ParamByName('prmIDCliente').Value := qryCLientes.FieldByName('ID').value;
+      qryContato.Open;
+
+      Result := qryContato.RecordCount > 0;
+    end;
+  except
+    raise Exception.Create('Erro ao consultar Clientes');
+  end;
+end;
+
+//Função para buscar o cliente
+function BuscarNomePOO(prmTexto: String): TListaCliente;
+var
+  LocObjeto: TCliente;
+  LocArrayObj: array of TCliente;
+  LocContador: Integer;
+  LocLista: TListaCliente;
+begin
+  try
+    with DataModule2 do
+    begin
+      qryClientes.Close;
+      qryClientes.SQL.Clear;
+      qryClientes.SQL.Add('SELECT * FROM Cliente WHERE Nome LIKE '+QuotedStr('%'+prmTexto+'%'));
+      qryClientes.SQL.Add(' ORDER BY ID ');
+      qryClientes.Open;
+
+      if qryClientes.RecordCount > 0 then
+      begin
+        LocContador := 0;
+        LocLista := TListaCliente.Create();
+        qryClientes.First;
+        while not qryClientes.Eof do
+        begin
+          SetLength(LocArrayObj,LocContador+1);
+          LocObjeto := TCliente.Create();
+          LocObjeto.Clear;
+          LocObjeto.Nome           := qryClientes.FieldByName('Nome').AsString;
+          LocObjeto.CEP            := qryClientes.FieldByName('CEP').AsString;
+          LocObjeto.Logradouro     := qryClientes.FieldByName('Logradouro').AsString;
+          LocObjeto.Numero         := qryClientes.FieldByName('Numero').AsString;
+          LocObjeto.Complemento    := qryClientes.FieldByName('Complemento').AsString;
+          LocObjeto.Cidade         := qryClientes.FieldByName('Cidade').AsString;
+          LocObjeto.Sigla_UF       := qryClientes.FieldByName('Sigla_UF').AsString;
+          LocObjeto.IBGE_Cidade    := qryClientes.FieldByName('IBGE_Cidade').AsString;
+          LocObjeto.IBGE_UF        := qryClientes.FieldByName('IBGE_UF').AsString;
+          LocObjeto.ID             := qryClientes.FieldByName('ID').AsInteger;
+          LocArrayObj[LocContador] := LocObjeto;
+          Inc(LocContador);
+          qryClientes.Next;
+        end;
+      end;
+      for LocContador := 0 to Length(LocArrayObj)-1 do
+        LocLista.Adicionar(LocArrayObj[LocContador]);
+      Result := LocLista;
+      LocArrayObj := nil;
+    end;
+  except
+    raise Exception.Create('Erro ao consultar Clientes');
+  end;
+end;
+
+function BuscarClienteNaAPI(prmNome: String): TListaCliente;
+var
+  LJsonArr: TJSONVAlue;
+  LocString: String;
+begin
+  try
+    with DataModule2 do
+    begin
+      LocString := '{Nome='+prmNome+'}';
+      LJsonArr := TJSonObject.ParseJSONValue(LocString);
+      RESTRequest1.AddBody(LJsonArr);
+      {RESTRequest1.Params.AddItem;
+        RESTRequest1.Params.Items[1].name  := 'Nome';
+        RESTRequest1.Params.Items[1].Value := prmNome;
+        RESTRequest1.Parameterbyname('Nome').Value := prmNome;}
+      RESTRequest1.execute;
+
+      ShowMessage(RESTResponse1.Content);
+      //Result := CarregarJsonPOO(RESTResponse1.Content);
+    end;
+  except
+  end;
+end;
+
+//Função Buscar CEP
+function BuscarCep(prmCEP: String): TJSONValue;
+ var
+  LocObj, LocJson: TJSONObject;
+  LocJsonValue: TJSONValue;
+  RESTClient1: TRESTClient;
+  RESTRequest1: TRESTRequest;
+  RESTResponse1: TRESTResponse;
+  Endereco: TStringList;
+begin
+  RESTClient1 := TRESTClient.Create(nil);
+  RESTRequest1 := TRESTRequest.Create(nil);
+  RESTResponse1 := TRESTResponse.Create(nil);
+  RESTRequest1.Client := RESTClient1;
+  RESTRequest1.Response := RESTResponse1;
+  RESTClient1.BaseURL := 'https://viacep.com.br/ws/' + prmCEP + '/json';
+  RESTRequest1.Execute;
+
+  LocJsonValue := TJSONObject.ParseJSONValue(RESTResponse1.Content.Trim);
+  Result := LocJsonValue;
+end;
+
+function ExcluirContato(prmID, prmIDCliente:Integer):Boolean;
+var LocScript: String;
+begin
+  if prmID = 0 then
+    LocScript := 'DELETE FROM Contato WHERE ID_Cliente = ' +IntToStr(prmIDCliente)
+  else
+    LocScript := 'DELETE FROM Contato WHERE ID = ' +IntToStr(prmID);
+  result := ExecutarQuery(LocScript);
+end;
+
+function ExcluirCliente(prmID: Integer): Boolean;
+var LocScript: String;
+begin
+  Result := False;
+  if DataModule2.qryContato.RecordCount > 0 then
+    if not ExcluirContato(0,prmID) then
+      Exit;
+
+  LocScript := 'DELETE FROM Cliente WHERE ID = ' +IntToStr(prmID);
+
+  Result := ExecutarQuery(LocScript);
+end;
+
+//Carrega o Json da API no array de objetos
+function CarregarJsonPOO(prmJsonCLiente: String): TListaCliente;
+var
+  LocLista : TListaCliente;
+  LocContador: Integer;
+  LocObjeto: TCliente;
+  LocArrayObj: array of TCliente;
+  LocJsonObjeto: TJSONObject;
+begin
+  LocJsonObjeto := TJSONObject.ParseJSONValue(TEncoding.ASCII.GetBytes(prmJsonCLiente), 0) as TJSONObject;
+  {if qryClientes.RecordCount > 0 then
+  begin
+    LocContador := 0;
+    LocLista := TListaCliente.Create();
+    qryClientes.First;
+    while not qryClientes.Eof do
+    begin
+      SetLength(LocArrayObj,LocContador+1);
+      LocObjeto := TCliente.Create();
+      LocObjeto.Clear;
+      LocObjeto.Nome := qryClientes.FieldByName('Nome').AsString;
+      LocObjeto.CEP := qryClientes.FieldByName('CEP').AsString;
+      LocObjeto.Logradouro := qryClientes.FieldByName('Logradouro').AsString;
+      LocObjeto.Numero := qryClientes.FieldByName('Numero').AsString;
+      LocObjeto.Complemento := qryClientes.FieldByName('Complemento').AsString;
+      LocObjeto.Cidade := qryClientes.FieldByName('Cidade').AsString;
+      LocObjeto.Sigla_UF := qryClientes.FieldByName('Sigla_UF').AsString;
+      LocObjeto.IBGE_Cidade := qryClientes.FieldByName('IBGE_Cidade').AsString;
+      LocObjeto.IBGE_UF := qryClientes.FieldByName('IBGE_UF').AsString;
+      LocObjeto.ID := qryClientes.FieldByName('ID').AsInteger;
+      LocArrayObj[LocContador] := LocObjeto;
+      Inc(LocContador);
+      qryClientes.Next;
+    end;
+  end;}
+end;
+
+//Função que executa uma query passada como parâmero
+function ExecutarQuery(prmScript: String): Boolean;
+var
+  LocQuery: TADOQuery;
+begin
+  try
+    LocQuery := TADOQuery.Create(nil);
+    LocQuery.Connection := DataModule2.ConexaoPrincipal;
+    LocQuery.SQL.Clear;
+    LocQuery.SQL.Add(prmScript);
+
+    Result := LocQuery.ExecSQL > 0;
+  except
+    raise Exception.Create('Erro ao executar Query');
+  end;
+end;
+
+function GravarCliente(prmNome,
+  prmCep,
+  prmLogradouro,
+  prmNumero,
+  prmComplemento,
+  prmCidade,
+  prmSigla_UF,
+  prmIBGE_Cidade,
+  prmIBGE_UF: String;
+  prmID: Integer): Boolean;
+var
+  LocScript: String;
+begin
+  try
+    if IDExiste(prmID,'Cliente') then
+    begin
+      LocScript := 'UPDATE Cliente ' +
+      ' SET  NOME = ' + QuotedStr(prmNome) +
+      '      CEP = '  + QuotedStr(prmCEP) +
+      '      CEP = '  + QuotedStr(prmLogradouro) +
+      '      CEP = '  + QuotedStr(prmNumero) +
+      '      CEP = '  + QuotedStr(prmComplemento) +
+      '      CEP = '  + QuotedStr(prmCidade) +
+      '      CEP = '  + QuotedStr(prmSigla_UF) +
+      '      CEP = '  + QuotedStr(prmIBGE_Cidade) +
+      '      CEP = '  + QuotedStr(prmIBGE_UF) +
+      ' WHERE ID = '  + IntToStr(prmID);
+    end
+    else
+    begin
+      LocScript := 'INSERT INTO Cliente (Nome, CEP, Logradouro, Numero, Complemento, Cidade, Sigla_UF, IBGE_Cidade, IBGE_UF) ' +
+      ' Values (' + QuotedStr(prmNome) + ' ,' +
+       QuotedStr(prmCEP) + ' ,' +
+       QuotedStr(prmLogradouro) + ' ,' +
+       QuotedStr(prmNumero) + ' ,' +
+       QuotedStr(prmComplemento) + ' ,' +
+       QuotedStr(prmCidade) + ' ,' +
+       QuotedStr(prmSigla_UF) + ' ,' +
+       QuotedStr(prmIBGE_Cidade) + ' ,' +
+       QuotedStr(prmIBGE_UF) + ' )';
+    end;
+    if ExecutarQuery(LocScript) then
+      ShowMessage('Registro Salvo com Sucesso');
+    Result := true;
+  except
+  end;
+end;
+
+function GravarContato(prmIDCliente: Integer; prmNomeContato, prmDataNascimento, prmTelefone: String): Boolean;
+var
+  LocScript, LocTelefone: String;
+begin
+  LocTelefone := prmTelefone.Replace('(','');
+  LocTelefone := LocTelefone.Replace(')','');
+  LocTelefone := LocTelefone.Replace('-','');
+
+  LocScript:= 'INSERT INTO Contato (ID_Cliente, Nome, Data_Nasc, Telefone) '+
+        ' VALUES ( ' +IntToStr(prmIDCliente) + ', ' +
+          QuotedStr(prmNomeContato) + ', ' +
+          QuotedStr(prmDataNascimento) + ', ' +
+          QuotedStr(LocTelefone)+')';
+  result := ExecutarQuery(LocScript);
+end;
+
+//Função para montar query
+function MontarQuery(var prmQuery: TADOQuery; LocScript: String): Boolean;
+begin
+  try
+    if LocScript = '' then
+      Exit;
+    prmQuery := TADOQuery.Create(nil);
+    prmQuery.Connection := DataModule2.ConexaoPrincipal;
+    prmQuery.SQL.Clear;
+    prmQuery.SQL.Add(LocScript);
+    prmQuery.Open;
+    Result := True;
+  except
+    result := False;
+  end;
+end;
+
+//Função para fechar a QryCliente
+function FecharQryCliente(): Boolean;
+begin
+  DataModule2.qryClientes.Close;
+end;
+
+//Função para fechar a QryContato
+function FecharQryContato(): Boolean;
+begin
+  DataModule2.qryContato.Close;
+end;
+
+//Função para verificar se o iD existe na tabela
+function IDExiste(prmID: Integer; prmTabela: String): Boolean;
+var
+  LocScript: String;
+  LocQuery: TADOQuery;
+begin
+  try
+    Result:= False;
+    if prmID = 0 then
+      Exit;
+
+    LocScript := 'SELECT ID FROM '+prmTabela+ ' WHERE ID = '+IntToStr(prmID);
+
+    if MontarQuery(LocQuery, LocScript) then
+      if LocQuery.RecordCount>0 then
+        Result:= True;
+    FreeAndNil(LocQuery);
+  except
+    raise Exception.Create('Erro ao verificar se o ID Existe');
+    FreeAndNil(LocQuery);
+  end;
+end;
+
+function ValidarCep(const CEP: String): Boolean;
+var
+  I: integer;
+begin
+  Result := True;
+  if Length(CEP) <> 8 then
+    Result := False;
+end;
+
+//Carrega a QryContatos
+procedure CarregarContatos(prmIDCliente: String);
+begin
+  with DataModule2 do
+  begin
+    qryContato.Close;
+    qryContato.Parameters.ParamByName('prmIDCliente').Value := prmIDCliente;
+    qryContato.Open;
+  end;
+end;
+
+//Criar Novo Registro Cliente
+procedure NovoCliente(var prmCliente: TCliente);
+begin
+  prmCliente := TCliente.Create();
+end;
+
+//Criar Novo Resgitro Contato
+procedure NovoContato(prmIDCLiente: Integer; var prmContato: TContato);
+begin
+  prmContato := TContato.Create(prmIDCLiente);
+end;
+
+end.
